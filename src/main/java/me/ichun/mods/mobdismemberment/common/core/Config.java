@@ -1,53 +1,47 @@
 package me.ichun.mods.mobdismemberment.common.core;
 
-import me.ichun.mods.ichunutil.common.core.config.ConfigBase;
-import me.ichun.mods.ichunutil.common.core.config.annotations.ConfigProp;
-import me.ichun.mods.ichunutil.common.core.config.annotations.IntBool;
-import me.ichun.mods.ichunutil.common.core.config.annotations.IntMinMax;
-import me.ichun.mods.mobdismemberment.common.MobDismemberment;
+import net.minecraftforge.common.ForgeConfigSpec;
 
-import java.io.File;
+public class Config {
+    public static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
+    public static final ForgeConfigSpec SPEC;
 
-public class Config extends ConfigBase
-{
-    @ConfigProp(category = "clientOnly")
-    @IntMinMax(min = 0)
-    public int gibTime = 1000;
+    public static final ForgeConfigSpec.IntValue GIB_TIME;
+    public static final ForgeConfigSpec.IntValue GIB_GROUND_TIME;
+    public static final ForgeConfigSpec.BooleanValue BLOOD;
+    public static final ForgeConfigSpec.IntValue BLOOD_COUNT;
+    public static final ForgeConfigSpec.BooleanValue GREEN_BLOOD;
+    public static final ForgeConfigSpec.BooleanValue GIB_PUSHING;
 
-    @ConfigProp(category = "clientOnly")
-    @IntMinMax(min = 0)
-    public int gibGroundTime = 100;
+    static {
+        BUILDER.comment("Client-side configuration for Mob Dismemberment");
+        BUILDER.push("client");
 
-    @ConfigProp(category = "clientOnly")
-    @IntBool
-    public int blood = 1;
+        GIB_TIME = BUILDER
+                .comment("How long gibs last (in ticks). Default: 1000")
+                .defineInRange("gibTime", 1000, 0, Integer.MAX_VALUE);
 
-    @ConfigProp(category = "clientOnly")
-    @IntMinMax(min = 1, max = 1000)
-    public int bloodCount = 100;
+        GIB_GROUND_TIME = BUILDER
+                .comment("How long gibs last on the ground before fading (in ticks). Default: 100")
+                .defineInRange("gibGroundTime", 100, 0, Integer.MAX_VALUE);
 
-    @ConfigProp(category = "clientOnly")
-    @IntBool
-    public int greenBlood = 0;
+        BLOOD = BUILDER
+                .comment("Enable blood particles. Default: true")
+                .define("blood", true);
 
-    @ConfigProp(category = "clientOnly")
-    @IntBool
-    public int gibPushing = 1;
+        BLOOD_COUNT = BUILDER
+                .comment("Number of blood particles to spawn. Default: 100")
+                .defineInRange("bloodCount", 100, 1, 1000);
 
-    public Config(File file)
-    {
-        super(file);
-    }
+        GREEN_BLOOD = BUILDER
+                .comment("Use green blood instead of red. Default: false")
+                .define("greenBlood", false);
 
-    @Override
-    public String getModId()
-    {
-        return MobDismemberment.MOD_ID;
-    }
+        GIB_PUSHING = BUILDER
+                .comment("Allow gibs to push entities. Default: true")
+                .define("gibPushing", true);
 
-    @Override
-    public String getModName()
-    {
-        return "Mob Dismemberment";
+        BUILDER.pop();
+        SPEC = BUILDER.build();
     }
 }

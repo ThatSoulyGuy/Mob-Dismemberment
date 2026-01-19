@@ -1,325 +1,282 @@
 package me.ichun.mods.mobdismemberment.client.entity;
 
-import me.ichun.mods.ichunutil.common.iChunUtil;
+import me.ichun.mods.mobdismemberment.client.helper.ModelHelper;
 import me.ichun.mods.mobdismemberment.common.MobDismemberment;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityLivingBase;
-import net.minecraft.entity.MoverType;
-import net.minecraft.entity.item.EntityMinecartTNT;
-import net.minecraft.entity.item.EntityTNTPrimed;
-import net.minecraft.entity.monster.EntityCreeper;
-import net.minecraft.entity.monster.EntitySkeleton;
-import net.minecraft.nbt.NBTTagCompound;
-import net.minecraft.world.World;
+import me.ichun.mods.mobdismemberment.common.core.Config;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.model.geom.ModelPart;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.MoverType;
+import net.minecraft.world.entity.item.PrimedTnt;
+import net.minecraft.world.entity.monster.Creeper;
+import net.minecraft.world.entity.vehicle.MinecartTNT;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 
-import java.util.Iterator;
-import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
-public class EntityGib extends Entity
-{
-    public EntityLivingBase parent;
-    public int type;
+public class EntityGib extends Entity {
+    // Counter for generating unique negative IDs for client-side entities
+    private static final AtomicInteger CLIENT_ID_COUNTER = new AtomicInteger(-1);
+
+    // Model part data - stores the actual bone to render
+    public ModelPart modelPart;
+    public ResourceLocation texture;
+    public String partName;
+
+    // Position offset from entity center where this part was
+    public float partOffsetX;
+    public float partOffsetY;
+    public float partOffsetZ;
+
+    // Geometric center offset for proper rotation pivot
+    public float centerX;
+    public float centerY;
+    public float centerZ;
+
+    // Physics
     public float pitchSpin;
     public float yawSpin;
-
     public int groundTime;
     public int liveTime;
-
     public boolean explosion;
 
-    public EntityGib(World world)
-    {
-        super(world);
-        parent = null;
-        type = 0; //0 == head; 1 == left arm; 2 == right arm; 3 == head; 4 == left leg; 5 == right leg; 6+ creeperfeet.
+    // Store motion locally since client-side entities may not track deltaMovement properly
+    public double motionX;
+    public double motionY;
+    public double motionZ;
 
+    public EntityGib(EntityType<? extends EntityGib> entityType, Level level) {
+        super(entityType, level);
+        this.setId(CLIENT_ID_COUNTER.getAndDecrement());
         groundTime = 0;
-        liveTime = iChunUtil.eventHandlerClient.ticks;
-        ignoreFrustumCheck = true;
+        liveTime = MobDismemberment.clientTicks;
+        noCulling = true;
+        noPhysics = false;
     }
 
-    public EntityGib(World world, EntityLivingBase gibParent, int gibType, Entity explo)
-    {
-        this(world);
-        parent = gibParent;
-        type = gibType;
+    /**
+     * Create a gib from a specific model part of a dying entity.
+     */
+    public EntityGib(Level level, LivingEntity parent, ModelHelper.PartData partData, Entity explo) {
+        this(MobDismemberment.GIB_ENTITY.get(), level);
 
-        liveTime = iChunUtil.eventHandlerClient.ticks;
+        // Store the model part and texture
+        this.modelPart = partData.part;
+        this.partName = partData.name;
+        this.texture = ModelHelper.getEntityTexture(parent);
 
-        setLocationAndAngles(parent.posX, parent.getEntityBoundingBox().minY, parent.posZ, parent.rotationYaw, parent.rotationPitch);
-        rotationYaw = parent.prevRenderYawOffset;
-        prevRotationYaw = parent.rotationYaw;
-        prevRotationPitch = parent.rotationPitch;
+        // Store part offsets
+        this.partOffsetX = partData.offsetX;
+        this.partOffsetY = partData.offsetY;
+        this.partOffsetZ = partData.offsetZ;
 
-        motionX = parent.motionX + (rand.nextDouble() - rand.nextDouble()) * 0.25D;
-        motionY = parent.motionY;
-        motionZ = parent.motionZ + (rand.nextDouble() - rand.nextDouble()) * 0.25D;
+        // Store geometric center for proper rotation pivot
+        this.centerX = partData.centerX;
+        this.centerY = partData.centerY;
+        this.centerZ = partData.centerZ;
 
-        if(type == 0)
-        {
-            rotationYaw = parent.rotationYawHead;
-            setSize(0.5F, 0.5F);
-            if(parent instanceof EntityCreeper)
-            {
-                posY += 1.25D;
-            }
-            else
-            {
-                posY += 1.5D;
-            }
-        }
-        else if(type == 1 || type == 2)
-        {
-            setSize(0.3F, 0.4F);
+        liveTime = MobDismemberment.clientTicks;
 
-            double offset = 0.350D;
-            double offset1 = -0.250D;
+        // Calculate spawn position based on part offset
+        double posX = parent.getX() + partOffsetX;
+        double posY = parent.getBoundingBox().minY + parent.getBbHeight() / 2.0 + partOffsetY;
+        double posZ = parent.getZ() + partOffsetZ;
 
-            if(parent instanceof EntitySkeleton)
-            {
-                offset -= 0.05D;
-                posY += 0.15D;
-            }
-            if(type == 2)
-            {
-                offset *= -1D;
-            }
+        setPos(posX, posY, posZ);
+        setYRot(parent.yBodyRot);
+        setXRot(parent.getXRot());
+        yRotO = parent.getYRot();
+        xRotO = parent.getXRot();
 
-            posX += offset * Math.cos(Math.toRadians(parent.renderYawOffset));
-            posZ += offset * Math.sin(Math.toRadians(parent.renderYawOffset));
+        // Initial velocity with some randomness
+        double motionX = parent.getDeltaMovement().x + (random.nextDouble() - random.nextDouble()) * 0.25D;
+        double motionY = parent.getDeltaMovement().y + random.nextDouble() * 0.2D;
+        double motionZ = parent.getDeltaMovement().z + (random.nextDouble() - random.nextDouble()) * 0.25D;
 
-            posX += offset1 * Math.sin(Math.toRadians(parent.renderYawOffset));
-            posZ -= offset1 * Math.cos(Math.toRadians(parent.renderYawOffset));
+        // Random spin
+        float i = random.nextInt(45) + 5F + random.nextFloat();
+        float j = random.nextInt(45) + 5F + random.nextFloat();
+        if (random.nextInt(2) == 0) i *= -1;
+        if (random.nextInt(2) == 0) j *= -1;
+        pitchSpin = i * (float) (motionY + 0.3D);
+        yawSpin = j * (float) (Math.sqrt(Math.abs(motionX * motionZ)) + 0.3D);
 
-            posY += 1.25D;
+        // Handle explosion force
+        if (explo != null) {
+            double dist = Math.max(explo.distanceTo(parent) / 2D, 0.1D);
+            dist = Math.pow(dist, 2);
 
-            prevRotationPitch = rotationPitch = -90F;
-        }
-        else if(type == 3)
-        {
-            setSize(0.5F, 0.5F);
-            if(parent instanceof EntityCreeper)
-            {
-                posY += 0.75D;
-            }
-            else
-            {
-                posY += 1.0D;
-            }
-        }
-        else if(type == 4 || type == 5)
-        {
-            setSize(0.3F, 0.4F);
-
-            double offset = 0.125D;
-
-            if(type == 5)
-            {
-                offset *= -1D;
-            }
-
-            posX += offset * Math.cos(Math.toRadians(parent.renderYawOffset));
-            posZ += offset * Math.sin(Math.toRadians(parent.renderYawOffset));
-
-            posY += 0.375D;
-        }
-        else if(type >= 6)
-        {
-            setSize(0.3F, 0.4F);
-
-            double offset = 0.125D;
-            double offset1 = -0.250D;
-
-            if(parent instanceof EntitySkeleton)
-            {
-                offset -= 0.05D;
-                posY += 0.15D;
-            }
-            if(type % 2 == 1)
-            {
-                offset *= -1D;
-            }
-            if(type >= 8)
-            {
-                offset1 *= -1D;
-            }
-
-            posX += offset * Math.cos(Math.toRadians(parent.renderYawOffset));
-            posZ += offset * Math.sin(Math.toRadians(parent.renderYawOffset));
-
-            posX += offset1 * Math.sin(Math.toRadians(parent.renderYawOffset));
-            posZ -= offset1 * Math.cos(Math.toRadians(parent.renderYawOffset));
-
-            posY += 0.3125D;
-        }
-
-        float i = rand.nextInt(45) + 5F + rand.nextFloat();
-        float j = rand.nextInt(45) + 5F + rand.nextFloat();
-        if(rand.nextInt(2) == 0)
-        {
-            i *= -1;
-        }
-        if(rand.nextInt(2) == 0)
-        {
-            j *= -1;
-        }
-        pitchSpin = i * (float)(motionY + 0.3D);
-        yawSpin = j * (float)(Math.sqrt(motionX * motionZ) + 0.3D);
-
-        setLocationAndAngles(posX, posY, posZ, rotationYaw, rotationPitch);
-
-        if(explo != null)
-        {
-            double mag = 1.0D;
-            double mag2 = 1.0D;
-            double dist = explo.getDistance(parent);
-            dist = Math.pow(dist / 2D, 2);
-            if(dist < 0.1D)
-            {
-                dist = 0.1D;
-            }
-            if(explo instanceof EntityTNTPrimed || explo instanceof EntityMinecartTNT)
-            {
+            double mag;
+            if (explo instanceof PrimedTnt || explo instanceof MinecartTNT) {
                 mag = 1.0D * (4.0 / dist);
-            }
-            else if(explo instanceof EntityCreeper)
-            {
-                EntityCreeper creep = (EntityCreeper)explo;
-                if(creep.getPowered())
-                {
-                    mag = 1.0D * (6.0D / dist);
-                }
-                else
-                {
-                    mag = 1.0D * (3.0D / dist);
-                }
+            } else if (explo instanceof Creeper creep) {
+                mag = creep.isPowered() ? 1.0D * (6.0D / dist) : 1.0D * (3.0D / dist);
+            } else {
+                mag = 1.0D;
             }
             mag = Math.pow(mag, 2) * 0.2D;
-            mag2 = ((posY - explo.posY));
+
+            double mag2 = posY - explo.getY();
             motionX *= mag;
             motionY = mag2 * 0.4D + 0.22D;
             motionZ *= mag;
-
             explosion = true;
         }
+
+        this.motionX = motionX;
+        this.motionY = motionY;
+        this.motionZ = motionZ;
     }
 
     @Override
-    public void onUpdate()
-    {
-        if(parent == null)
-        {
-            setDead();
-            return;
-        }
-        if(explosion)
-        {
+    public void tick() {
+        // Store old position for interpolation
+        this.xo = this.getX();
+        this.yo = this.getY();
+        this.zo = this.getZ();
+        this.yRotO = this.getYRot();
+        this.xRotO = this.getXRot();
+
+        if (explosion) {
             motionX *= 1D / 0.92D;
             motionY *= 1D / 0.95D;
             motionZ *= 1D / 0.92D;
+            explosion = false;
         }
-        super.onUpdate();
-        move(MoverType.SELF, motionX, motionY, motionZ);
 
-        this.motionY -= 0.08D;
+        // Apply gravity
+        motionY -= 0.08D;
 
-        this.motionY *= 0.98D;
-        this.motionX *= 0.91D;
-        this.motionZ *= 0.91D;
+        // Move the entity
+        move(MoverType.SELF, new Vec3(motionX, motionY, motionZ));
 
-        if(inWater)
-        {
+        // Apply drag
+        motionY *= 0.98D;
+        motionX *= 0.91D;
+        motionZ *= 0.91D;
+
+        if (isInWater()) {
             motionY = 0.3D;
             pitchSpin = 0.0F;
             yawSpin = 0.0F;
         }
-        if(onGround || handleWaterMovement())
-        {
-            rotationPitch += (-90F - (rotationPitch % 360F)) / 2;
 
-            this.motionY *= 0.8D;
-            this.motionX *= 0.8D;
-            this.motionZ *= 0.8D;
-        }
-        else
-        {
-            rotationPitch += pitchSpin;
-            rotationYaw += yawSpin;
+        if (onGround() || isInWater()) {
+            setXRot(getXRot() + (-90F - (getXRot() % 360F)) / 2);
+            motionY *= 0.8D;
+            motionX *= 0.8D;
+            motionZ *= 0.8D;
+        } else {
+            setXRot(getXRot() + pitchSpin);
+            setYRot(getYRot() + yawSpin);
             pitchSpin *= 0.98F;
             yawSpin *= 0.98F;
         }
 
-        if(MobDismemberment.config.gibPushing == 1)
-        {
-            List var2 = this.world.getEntitiesWithinAABBExcludingEntity(this, this.getEntityBoundingBox().grow(0.15D, 0.0D, 0.15D));
-            if(var2 != null && !var2.isEmpty())
-            {
-                Iterator var10 = var2.iterator();
-
-                while(var10.hasNext())
-                {
-                    Entity var4 = (Entity)var10.next();
-
-                    if(var4 instanceof EntityGib && !var4.onGround)
-                    {
-                        continue;
-                    }
-
-                    if(var4.canBePushed())
-                    {
-                        var4.applyEntityCollision(this);
-                    }
-                }
+        // Check for player collision and push gib away from player
+        net.minecraft.world.entity.player.Player player = Minecraft.getInstance().player;
+        if (player != null && this.getBoundingBox().intersects(player.getBoundingBox())) {
+            double dx = this.getX() - player.getX();
+            double dz = this.getZ() - player.getZ();
+            double dist = Math.sqrt(dx * dx + dz * dz);
+            if (dist > 0.01) {
+                dx /= dist;
+                dz /= dist;
+                this.motionX += dx * 0.15;
+                this.motionZ += dz * 0.15;
+                this.motionY += 0.08;
             }
         }
 
-        if(onGround || handleWaterMovement())
-        {
+        // Lifetime management
+        if (onGround() || isInWater()) {
             groundTime++;
-            if(groundTime > MobDismemberment.config.gibGroundTime + 20)
-            {
-                setDead();
+            if (groundTime > Config.GIB_GROUND_TIME.get() + 20) {
+                discard();
             }
-        }
-        else if(groundTime > MobDismemberment.config.gibGroundTime)
-        {
+        } else if (groundTime > Config.GIB_GROUND_TIME.get()) {
             groundTime--;
-        }
-        else
-        {
+        } else {
             groundTime = 0;
         }
-        if(liveTime + MobDismemberment.config.gibTime < iChunUtil.eventHandlerClient.ticks)
-        {
-            setDead();
+
+        if (liveTime + Config.GIB_TIME.get() < MobDismemberment.clientTicks) {
+            discard();
         }
     }
 
     @Override
-    public void fall(float distance, float damageMultiplier)
-    {
-    }
-
-    @Override
-    public boolean isEntityAlive()
-    {
-        return !this.isDead;
-    }
-
-    @Override
-    protected void entityInit()
-    {
-    }
-
-    @Override
-    public boolean writeToNBTOptional(NBTTagCompound par1NBTTagCompound)
-    {
+    public boolean causeFallDamage(float distance, float multiplier, net.minecraft.world.damagesource.DamageSource source) {
         return false;
     }
 
     @Override
-    public void readEntityFromNBT(NBTTagCompound nbttagcompound) {}
+    public boolean isAlive() {
+        return !this.isRemoved();
+    }
 
     @Override
-    public void writeEntityToNBT(NBTTagCompound nbttagcompound) {}
+    public boolean isPushable() {
+        return true;
+    }
+
+    @Override
+    public boolean isPickable() {
+        return true;
+    }
+
+    @Override
+    public void push(Entity entity) {
+        if (entity != this && !(entity instanceof EntityGib)) {
+            double dx = entity.getX() - this.getX();
+            double dz = entity.getZ() - this.getZ();
+            double dist = Math.max(dx * dx + dz * dz, 0.01);
+            dx /= dist;
+            dz /= dist;
+            this.motionX -= dx * 0.1;
+            this.motionZ -= dz * 0.1;
+            this.motionY += 0.05;
+        }
+    }
+
+    @Override
+    protected void defineSynchedData() {
+    }
+
+    @Override
+    public boolean saveAsPassenger(CompoundTag tag) {
+        return false;
+    }
+
+    @Override
+    protected void readAdditionalSaveData(CompoundTag tag) {
+    }
+
+    @Override
+    protected void addAdditionalSaveData(CompoundTag tag) {
+    }
+
+    @Override
+    public boolean shouldRender(double x, double y, double z) {
+        return true;
+    }
+
+    @Override
+    public boolean shouldRenderAtSqrDistance(double distance) {
+        return distance < 4096.0D;
+    }
+
+    public float getInterpolatedYaw(float partialTicks) {
+        return Mth.lerp(partialTicks, this.yRotO, this.getYRot());
+    }
+
+    public float getInterpolatedPitch(float partialTicks) {
+        return Mth.lerp(partialTicks, this.xRotO, this.getXRot());
+    }
 }

@@ -1,72 +1,97 @@
 package me.ichun.mods.mobdismemberment.client.render;
 
-import me.ichun.mods.ichunutil.common.core.util.EntityHelper;
-import me.ichun.mods.ichunutil.common.core.util.ObfHelper;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.math.Axis;
 import me.ichun.mods.mobdismemberment.client.entity.EntityGib;
-import me.ichun.mods.mobdismemberment.common.MobDismemberment;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.GlStateManager;
-import net.minecraft.client.renderer.entity.Render;
-import net.minecraft.client.renderer.entity.RenderManager;
-import net.minecraft.entity.monster.EntitySkeleton;
-import net.minecraft.util.ResourceLocation;
-import net.minecraft.util.math.MathHelper;
-import net.minecraftforge.fml.client.registry.IRenderFactory;
-import org.lwjgl.opengl.GL11;
+import me.ichun.mods.mobdismemberment.common.core.Config;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.entity.EntityRenderer;
+import net.minecraft.client.renderer.entity.EntityRendererProvider;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
 
-public class RenderGib extends Render<EntityGib>
-{
-    public ModelGib modelGib;
+public class RenderGib extends EntityRenderer<EntityGib> {
+    private static final ResourceLocation FALLBACK_TEXTURE = new ResourceLocation("textures/entity/zombie/zombie.png");
 
-    public RenderGib(RenderManager manager)
-    {
-        super(manager);
-        modelGib = new ModelGib();
+    public RenderGib(EntityRendererProvider.Context context) {
+        super(context);
     }
 
     @Override
-    protected ResourceLocation getEntityTexture(EntityGib gib)
-    {
-        Render render = Minecraft.getMinecraft().getRenderManager().getEntityRenderObject(gib.parent);
-        return ObfHelper.getEntityTexture(render, render.getClass(), gib.parent);
-    }
-
-    @Override
-    public void doRender(EntityGib gib, double par2, double par4, double par6, float par8, float par9)
-    {
-        GlStateManager.disableCull();
-        GlStateManager.pushMatrix();
-        bindEntityTexture(gib);
-        GlStateManager.enableBlend();
-        GlStateManager.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        GlStateManager.color(1.0F, 1.0F, 1.0F, MathHelper.clamp(gib.groundTime >= MobDismemberment.config.gibGroundTime ? 1.0F - (gib.groundTime - MobDismemberment.config.gibGroundTime + par9) / 20F : 1.0F, 0F, 1F));
-        GlStateManager.alphaFunc(GL11.GL_GREATER, 0.003921569F);
-
-        GlStateManager.translate(par2, par4, par6);
-
-        GlStateManager.translate(0.0F, gib.type == 0 ? 4F / 16F : gib.type <= 2 && gib.parent instanceof EntitySkeleton ? 1F / 16F : 2F / 16F, 0.0F);
-
-        GlStateManager.rotate(EntityHelper.interpolateRotation(gib.prevRotationYaw, gib.rotationYaw, par9), 0.0F, 1.0F, 0.0F);
-        GlStateManager.rotate(EntityHelper.interpolateRotation(gib.prevRotationPitch, gib.rotationPitch, par9), -1.0F, 0.0F, 0.0F);
-
-        GlStateManager.translate(0.0F, 24F / 16F - gib.height * 0.5F, 0.0F);
-
-        GlStateManager.scale(-1.0F, -1.0F, 1.0F);
-
-        modelGib.render(gib, 0.0F, 0.0F, -0.1F, 0.0F, 0.0F, 0.0625F);
-
-        GlStateManager.alphaFunc(GL11.GL_GREATER, 0.1F);
-        GlStateManager.disableBlend();
-        GlStateManager.popMatrix();
-        GlStateManager.enableCull();
-    }
-
-    public static class RenderFactory implements IRenderFactory<EntityGib>
-    {
-        @Override
-        public Render<? super EntityGib> createRenderFor(RenderManager manager)
-        {
-            return new RenderGib(manager);
+    public ResourceLocation getTextureLocation(EntityGib gib) {
+        if (gib.texture != null) {
+            return gib.texture;
         }
+        return FALLBACK_TEXTURE;
+    }
+
+    @Override
+    public void render(EntityGib gib, float entityYaw, float partialTicks, PoseStack poseStack, MultiBufferSource buffer, int packedLight) {
+        if (gib.modelPart == null) {
+            return;
+        }
+
+        poseStack.pushPose();
+
+        // Calculate alpha for fade out
+        float alpha = Mth.clamp(
+                gib.groundTime >= Config.GIB_GROUND_TIME.get()
+                        ? 1.0F - (gib.groundTime - Config.GIB_GROUND_TIME.get() + partialTicks) / 20F
+                        : 1.0F,
+                0F, 1F
+        );
+
+        // Apply rotation
+        float yaw = gib.getInterpolatedYaw(partialTicks);
+        float pitch = gib.getInterpolatedPitch(partialTicks);
+
+        poseStack.mulPose(Axis.YP.rotationDegrees(-yaw));
+        poseStack.mulPose(Axis.XP.rotationDegrees(pitch));
+
+        // Flip model (standard for entity rendering)
+        poseStack.scale(-1.0F, -1.0F, 1.0F);
+
+        // Translate to center the geometry at origin (center values are in model units)
+        // This makes the rotation happen around the geometric center
+        poseStack.translate(-gib.centerX / 16.0F, -gib.centerY / 16.0F, -gib.centerZ / 16.0F);
+
+        // Get texture and render
+        ResourceLocation texture = getTextureLocation(gib);
+        RenderType renderType = RenderType.entityTranslucent(texture);
+        VertexConsumer vertexConsumer = buffer.getBuffer(renderType);
+
+        // Save original pivot and rotation values
+        float origX = gib.modelPart.x;
+        float origY = gib.modelPart.y;
+        float origZ = gib.modelPart.z;
+        float origXRot = gib.modelPart.xRot;
+        float origYRot = gib.modelPart.yRot;
+        float origZRot = gib.modelPart.zRot;
+
+        // Zero out pivot and rotation so part renders at its cube positions only
+        gib.modelPart.x = 0;
+        gib.modelPart.y = 0;
+        gib.modelPart.z = 0;
+        gib.modelPart.xRot = 0;
+        gib.modelPart.yRot = 0;
+        gib.modelPart.zRot = 0;
+
+        // Render the stored model part
+        gib.modelPart.render(poseStack, vertexConsumer, packedLight, OverlayTexture.NO_OVERLAY, 1.0F, 1.0F, 1.0F, alpha);
+
+        // Restore original values
+        gib.modelPart.x = origX;
+        gib.modelPart.y = origY;
+        gib.modelPart.z = origZ;
+        gib.modelPart.xRot = origXRot;
+        gib.modelPart.yRot = origYRot;
+        gib.modelPart.zRot = origZRot;
+
+        poseStack.popPose();
+
+        super.render(gib, entityYaw, partialTicks, poseStack, buffer, packedLight);
     }
 }

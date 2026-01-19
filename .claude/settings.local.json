@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew build:*)",
+      "Bash(D:/IntelliJ/IDEA/Projects/Mob-Dismemberment/gradlew.bat build)",
+      "Bash(D:/IntelliJ/IDEA/Projects/Mob-Dismemberment/gradlew.bat clean build)",
+      "Bash(jar tf:*)",
+      "Bash(unzip:*)",
+      "Bash(cd:*)",
+      "Bash(git -C:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.minecraftforge.net)",
+      "WebFetch(domain:nekoyue.github.io)",
+      "WebFetch(domain:forums.minecraftforge.net)",
+      "WebFetch(domain:docs.neoforged.net)",
+      "WebFetch(domain:wiki.fabricmc.net)",
+      "Bash(identify:*)",
+      "Bash(python3:*)",
+      "Bash(gradlew build:*)",
+      "Bash(.gradlew.bat build)",
+      "Bash(cmd /c \"cd /d D:\\\\IntelliJ\\\\IDEA\\\\Projects\\\\Mob-Dismemberment && gradlew.bat build\")",
+      "Bash(cmd //c \"gradlew.bat build\")",
+      "Bash(cmd //c \"D:\\\\IntelliJ\\\\IDEA\\\\Projects\\\\Mob-Dismemberment\\\\gradlew.bat build\")",
+      "Bash(cmd //c \"cd /d D:\\\\IntelliJ\\\\IDEA\\\\Projects\\\\Mob-Dismemberment && gradlew.bat build\")",
+      "Bash(cmd //c \"dir D:\\\\IntelliJ\\\\IDEA\\\\Projects\\\\Mob-Dismemberment\\\\build\\\\libs\")",
+      "Bash(del \"D:\\\\IntelliJ\\\\IDEA\\\\Projects\\\\Mob-Dismemberment\\\\src\\\\main\\\\java\\\\me\\\\ichun\\\\mods\\\\mobdismemberment\\\\client\\\\render\\\\ModelGib.java\")"
+    ]
+  }
+}

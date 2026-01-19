@@ -1,112 +1,102 @@
 package me.ichun.mods.mobdismemberment.client.core;
 
-import me.ichun.mods.ichunutil.client.render.RendererHelper;
-import me.ichun.mods.ichunutil.common.iChunUtil;
-import me.ichun.mods.mobamputation.common.MobAmputation;
 import me.ichun.mods.mobdismemberment.client.entity.EntityGib;
-import me.ichun.mods.mobdismemberment.client.particle.ParticleBlood;
+import me.ichun.mods.mobdismemberment.client.helper.ModelHelper;
 import me.ichun.mods.mobdismemberment.common.MobDismemberment;
+import me.ichun.mods.mobdismemberment.common.core.Config;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.multiplayer.WorldClient;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityLivingBase;
-import net.minecraft.entity.item.EntityMinecartTNT;
-import net.minecraft.entity.item.EntityTNTPrimed;
-import net.minecraft.entity.monster.EntityCreeper;
-import net.minecraft.entity.monster.EntitySkeleton;
-import net.minecraft.entity.monster.EntityZombie;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.world.World;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.item.PrimedTnt;
+import net.minecraft.world.entity.monster.Creeper;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.vehicle.MinecartTNT;
+import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
+import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
-import net.minecraftforge.fml.common.gameevent.TickEvent;
-import net.minecraftforge.fml.common.network.FMLNetworkEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
+import java.util.*;
 import java.util.Map.Entry;
 
-public class EventHandlerClient
-{
-    public HashMap<EntityLivingBase, Integer> dismemberTimeout = new HashMap<>();
+public class EventHandlerClient {
+    public HashMap<LivingEntity, Integer> dismemberTimeout = new HashMap<>();
     public HashMap<Entity, Integer> exploTime = new HashMap<>();
     public ArrayList<Entity> explosionSources = new ArrayList<>();
+    public ArrayList<EntityGib> activeGibs = new ArrayList<>();
 
     @SubscribeEvent
-    public void onLivingDeath(LivingDeathEvent event)
-    {
-        if(event.getEntity().world.isRemote && (event.getEntityLiving() instanceof EntityZombie || event.getEntityLiving() instanceof EntitySkeleton || event.getEntityLiving() instanceof EntityCreeper) && !event.getEntityLiving().isChild())
-        {
-            dismemberTimeout.put(event.getEntityLiving(), 2);
+    public void onLivingDeath(LivingDeathEvent event) {
+        LivingEntity entity = event.getEntity();
+        // Dismember any LivingEntity except players and babies
+        if (entity.level().isClientSide &&
+            !(entity instanceof Player) &&
+            !entity.isBaby()) {
+            dismemberTimeout.put(entity, 2);
         }
     }
 
     @SubscribeEvent
-    public void onClientConnection(FMLNetworkEvent.ClientConnectedToServerEvent event)
-    {
+    public void onClientConnection(ClientPlayerNetworkEvent.LoggingIn event) {
         exploTime.clear();
         dismemberTimeout.clear();
         explosionSources.clear();
+        activeGibs.clear();
     }
 
     @SubscribeEvent
-    public void worldTick(TickEvent.ClientTickEvent event)
-    {
-        if(event.phase == TickEvent.Phase.END && Minecraft.getMinecraft().world != null)
-        {
-            Minecraft mc = Minecraft.getMinecraft();
-            WorldClient world = mc.world;
+    public void worldTick(TickEvent.ClientTickEvent event) {
+        if (event.phase == TickEvent.Phase.END && Minecraft.getInstance().level != null) {
+            Minecraft mc = Minecraft.getInstance();
+            ClientLevel world = mc.level;
 
-            if(!mc.isGamePaused())
-            {
-                for(int i = 0; i < world.loadedEntityList.size(); i++)
-                {
-                    Entity ent = world.loadedEntityList.get(i);
-                    if(ent instanceof EntityCreeper || ent instanceof EntityTNTPrimed || ent instanceof EntityMinecartTNT)
-                    {
-                        if(!explosionSources.contains(ent))
-                        {
+            MobDismemberment.clientTicks++;
+
+            if (!mc.isPaused()) {
+                // Clean up removed gibs from our tracking list
+                // Note: We don't manually tick - putNonPlayerEntity adds them to the world's tick list
+                activeGibs.removeIf(Entity::isRemoved);
+
+                for (Entity ent : world.entitiesForRendering()) {
+                    if (ent instanceof Creeper || ent instanceof PrimedTnt || ent instanceof MinecartTNT) {
+                        if (!explosionSources.contains(ent)) {
                             explosionSources.add(ent);
                         }
                     }
-                    if((ent instanceof EntityZombie || ent instanceof EntitySkeleton || ent instanceof EntityCreeper) && !ent.isEntityAlive() && !dismemberTimeout.containsKey(ent))
-                    {
-                        dismemberTimeout.put((EntityLivingBase)ent, 2);
+                    // Detect death for any LivingEntity except players
+                    if (ent instanceof LivingEntity living &&
+                        !(ent instanceof Player) &&
+                        !living.isBaby() &&
+                        !ent.isAlive() && !dismemberTimeout.containsKey(ent)) {
+                        dismemberTimeout.put(living, 2);
                     }
                 }
-                for(int i = explosionSources.size() - 1; i >= 0; i--)
-                {
+
+                for (int i = explosionSources.size() - 1; i >= 0; i--) {
                     Entity ent = explosionSources.get(i);
-                    if(ent.isDead)
-                    {
-                        if(ent instanceof EntityCreeper)
-                        {
-                            int igniteTime = ((EntityCreeper)ent).timeSinceIgnited;
-                            int maxFuseTime = ((EntityCreeper)ent).fuseTime;
-                            if(igniteTime >= maxFuseTime)
-                            {
-                                if(!exploTime.containsKey(ent))
-                                {
-                                    int time = iChunUtil.eventHandlerClient.ticks % 24000;
-                                    if(time > 23959L)
-                                    {
-                                        time -= 23999L;
+                    if (ent.isRemoved()) {
+                        if (ent instanceof Creeper creeper) {
+                            // Use getSwelling to check if creeper is about to explode
+                            // getSwelling returns a value from 0 to 1 representing the explosion progress
+                            float swellProgress = creeper.getSwelling(0);
+                            if (swellProgress >= 0.95f) { // About to explode
+                                if (!exploTime.containsKey(ent)) {
+                                    int time = MobDismemberment.clientTicks % 24000;
+                                    if (time > 23959) {
+                                        time -= 23999;
                                     }
                                     exploTime.put(ent, time);
                                 }
 
-                                dismemberTimeout.put((EntityLivingBase)ent, 2);
+                                dismemberTimeout.put(creeper, 2);
                             }
-                        }
-                        else if(ent instanceof EntityTNTPrimed || ent instanceof EntityMinecartTNT)
-                        {
-                            if(!exploTime.containsKey(ent))
-                            {
-                                int time = iChunUtil.eventHandlerClient.ticks % 24000;
-                                if(time > 23959L)
-                                {
-                                    time -= 23999L;
+                        } else if (ent instanceof PrimedTnt || ent instanceof MinecartTNT) {
+                            if (!exploTime.containsKey(ent)) {
+                                int time = MobDismemberment.clientTicks % 24000;
+                                if (time > 23959) {
+                                    time -= 23999;
                                 }
                                 exploTime.put(ent, time);
                             }
@@ -116,10 +106,9 @@ public class EventHandlerClient
                     }
                 }
 
-                Iterator<Entry<EntityLivingBase, Integer>> ite = dismemberTimeout.entrySet().iterator();
-                if(ite.hasNext())
-                {
-                    Entry<EntityLivingBase, Integer> e = ite.next();
+                Iterator<Entry<LivingEntity, Integer>> ite = dismemberTimeout.entrySet().iterator();
+                if (ite.hasNext()) {
+                    Entry<LivingEntity, Integer> e = ite.next();
 
                     e.setValue(e.getValue() - 1);
 
@@ -128,34 +117,28 @@ public class EventHandlerClient
 
                     Entity explo = null;
                     double dist = 1000D;
-                    for(Entry<Entity, Integer> e1 : exploTime.entrySet())
-                    {
-                        double mobDist = e1.getKey().getDistance(e.getKey());
-                        if(mobDist < 10D && mobDist < dist)
-                        {
+                    for (Entry<Entity, Integer> e1 : exploTime.entrySet()) {
+                        double mobDist = e1.getKey().distanceTo(e.getKey());
+                        if (mobDist < 10D && mobDist < dist) {
                             dist = mobDist;
                             explo = e1.getKey();
                             e.setValue(0);
                         }
                     }
 
-                    if(e.getValue() <= 0)
-                    {
-                        if(dismember(e.getKey().world, e.getKey(), explo))
-                        {
-                            e.getKey().setDead();
+                    if (e.getValue() <= 0) {
+                        if (dismember((ClientLevel) e.getKey().level(), e.getKey(), explo)) {
+                            e.getKey().discard();
                         }
                         ite.remove();
                     }
                 }
 
                 Iterator<Entry<Entity, Integer>> ite1 = exploTime.entrySet().iterator();
-                int worldTime = iChunUtil.eventHandlerClient.ticks % 24000;
-                while(ite1.hasNext())
-                {
+                int worldTime = MobDismemberment.clientTicks % 24000;
+                while (ite1.hasNext()) {
                     Entry<Entity, Integer> e = ite1.next();
-                    if(e.getValue() + 40L < worldTime)
-                    {
+                    if (e.getValue() + 40 < worldTime) {
                         ite1.remove();
                     }
                 }
@@ -163,64 +146,63 @@ public class EventHandlerClient
         }
     }
 
-    public boolean dismember(World world, EntityLivingBase living, Entity explo)
-    {
-        if(living.isChild())
-        {
+    public boolean dismember(ClientLevel world, LivingEntity living, Entity explo) {
+        if (living.isBaby()) {
             return false;
         }
-        if(living instanceof EntityCreeper)
-        {
-            world.spawnEntity(new EntityGib(world, living, 0, explo));
-            world.spawnEntity(new EntityGib(world, living, 3, explo));
-            world.spawnEntity(new EntityGib(world, living, 6, explo));
-            world.spawnEntity(new EntityGib(world, living, 7, explo));
-            world.spawnEntity(new EntityGib(world, living, 8, explo));
-            world.spawnEntity(new EntityGib(world, living, 9, explo));
+
+        // Extract all model parts from the entity
+        List<ModelHelper.PartData> parts = ModelHelper.extractModelParts(living);
+
+        if (parts.isEmpty()) {
+            return false;
         }
-        else
-        {
-            for(int i = 0; i < 6; i++)
-            {
-                if(MobDismemberment.hasMobAmputation() && i <= 2)
-                {
-                    me.ichun.mods.mobamputation.client.entity.EntityGib[] gibs = MobAmputation.eventHandlerClient.amputationMap.get(living);
-                    if(gibs != null && i < gibs.length)
-                    {
-                        if(!gibs[i].attached)
-                        {
-                            continue;
-                        }
-                    }
+
+        // Create a gib for each model part
+        for (ModelHelper.PartData partData : parts) {
+            addClientEntity(world, new EntityGib(world, living, partData, explo));
+        }
+
+        // Spawn blood particles
+        if (Config.BLOOD.get()) {
+            for (int k = 0; k < (explo != null ? Config.BLOOD_COUNT.get() * 10 : Config.BLOOD_COUNT.get()); k++) {
+                float var4 = 0.3F;
+                double mX = (double) (-Mth.sin(living.getYRot() / 180.0F * (float) Math.PI) * Mth.cos(living.getXRot() / 180.0F * (float) Math.PI) * var4);
+                double mZ = (double) (Mth.cos(living.getYRot() / 180.0F * (float) Math.PI) * Mth.cos(living.getXRot() / 180.0F * (float) Math.PI) * var4);
+                double mY = (double) (-Mth.sin(living.getXRot() / 180.0F * (float) Math.PI) * var4 + 0.1F);
+                var4 = 0.02F;
+                float var5 = living.getRandom().nextFloat() * (float) Math.PI * 2.0F;
+                var4 *= living.getRandom().nextFloat();
+
+                if (explo != null) {
+                    var4 *= 100D;
                 }
-                world.spawnEntity(new EntityGib(world, living, i, explo));
-            }
 
-            if(living instanceof EntityZombie && MobDismemberment.config.blood == 1)
-            {
-                for(int k = 0; k < (explo != null ? MobDismemberment.config.bloodCount * 10 : MobDismemberment.config.bloodCount); k++)
-                {
-                    float var4 = 0.3F;
-                    double mX = (double)(-MathHelper.sin(living.rotationYaw / 180.0F * (float)Math.PI) * MathHelper.cos(living.rotationPitch / 180.0F * (float)Math.PI) * var4);
-                    double mZ = (double)(MathHelper.cos(living.rotationYaw / 180.0F * (float)Math.PI) * MathHelper.cos(living.rotationPitch / 180.0F * (float)Math.PI) * var4);
-                    double mY = (double)(-MathHelper.sin(living.rotationPitch / 180.0F * (float)Math.PI) * var4 + 0.1F);
-                    var4 = 0.02F;
-                    float var5 = living.getRNG().nextFloat() * (float)Math.PI * 2.0F;
-                    var4 *= living.getRNG().nextFloat();
+                mX += Math.cos((double) var5) * (double) var4;
+                mY += (double) ((living.getRandom().nextFloat() - living.getRandom().nextFloat()) * 0.1F);
+                mZ += Math.sin((double) var5) * (double) var4;
 
-                    if(explo != null)
-                    {
-                        var4 *= 100D;
-                    }
-
-                    mX += Math.cos((double)var5) * (double)var4;
-                    mY += (double)((living.getRNG().nextFloat() - living.getRNG().nextFloat()) * 0.1F);
-                    mZ += Math.sin((double)var5) * (double)var4;
-
-                    RendererHelper.spawnParticle(new ParticleBlood(living.world, living.posX, living.posY + 0.5D + (living.getRNG().nextDouble() * 0.7D), living.posZ, living.motionX + mX, living.motionY + mY, living.motionZ + mZ, false));
-                }
+                world.addParticle(
+                        MobDismemberment.BLOOD_PARTICLE.get(),
+                        living.getX(),
+                        living.getY() + 0.5D + (living.getRandom().nextDouble() * 0.7D),
+                        living.getZ(),
+                        living.getDeltaMovement().x + mX,
+                        living.getDeltaMovement().y + mY,
+                        living.getDeltaMovement().z + mZ
+                );
             }
         }
         return true;
+    }
+
+    /**
+     * Add a client-side only entity to the world.
+     * Uses putNonPlayerEntity which is the method used for entities received from the server.
+     * Also adds to our activeGibs list for manual ticking.
+     */
+    private void addClientEntity(ClientLevel world, EntityGib entity) {
+        world.putNonPlayerEntity(entity.getId(), entity);
+        activeGibs.add(entity);
     }
 }

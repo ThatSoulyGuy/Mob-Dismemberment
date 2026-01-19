@@ -1,59 +1,68 @@
 package me.ichun.mods.mobdismemberment.client.particle;
 
-import me.ichun.mods.mobdismemberment.common.MobDismemberment;
-import net.minecraft.client.particle.Particle;
-import net.minecraft.world.World;
+import me.ichun.mods.mobdismemberment.common.core.Config;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.particle.ParticleRenderType;
+import net.minecraft.client.particle.SpriteSet;
+import net.minecraft.client.particle.TextureSheetParticle;
 
-public class ParticleBlood extends Particle
-{
-    public ParticleBlood(World world, double d, double d1, double d2, double d3, double d4, double d5, boolean isPlayer)
-    {
-        super(world, d, d1, d2, d3, d4, d5);
-        particleGravity = 0.06F;
-        particleRed = 1.0F;
-        particleGreen = MobDismemberment.config.greenBlood == 1 && !isPlayer ? 1.0F : 0.0F;
-        particleBlue = 0.0F;
-        particleScale *= 1.2F;
-        multiplyVelocity(1.2F);
-        motionY += rand.nextFloat() * 0.15F;
-        motionZ *= 0.4F / (rand.nextFloat() * 0.9F + 0.1F);
-        motionX *= 0.4F / (rand.nextFloat() * 0.9F + 0.1F);
-        particleMaxAge = (int)(200F + (20F / (rand.nextFloat() * 0.9F + 0.1F)));
-        setSize(0.01F, 0.01F);
-        setParticleTextureIndex(19 + rand.nextInt(4));
+public class ParticleBlood extends TextureSheetParticle {
+
+    public ParticleBlood(ClientLevel level, double x, double y, double z, double xSpeed, double ySpeed, double zSpeed, boolean isPlayer, SpriteSet sprites) {
+        super(level, x, y, z);
+
+        // Matches original 1.12.2 constructor exactly
+        this.gravity = 0.06F;
+        this.rCol = 1.0F;
+        this.gCol = Config.GREEN_BLOOD.get() && !isPlayer ? 1.0F : 0.0F;
+        this.bCol = 0.0F;
+        this.quadSize *= 1.2F;
+
+        // multiplyVelocity(1.2F) equivalent
+        this.xd = xSpeed * 1.2D;
+        this.yd = ySpeed * 1.2D;
+        this.zd = zSpeed * 1.2D;
+
+        this.yd += random.nextFloat() * 0.15F;
+        this.zd *= 0.4F / (random.nextFloat() * 0.9F + 0.1F);
+        this.xd *= 0.4F / (random.nextFloat() * 0.9F + 0.1F);
+
+        this.lifetime = (int) (200F + (20F / (random.nextFloat() * 0.9F + 0.1F)));
+        this.hasPhysics = true;
+
+        // Pick sprite from the SpriteSet (uses our custom blood_0 through blood_3 textures)
+        this.pickSprite(sprites);
     }
 
     @Override
-    public void onUpdate()
-    {
-        if(particleAge++ >= particleMaxAge)
-        {
-            setExpired();
+    public void tick() {
+        // Matches original 1.12.2 onUpdate() exactly
+        if (this.age++ >= this.lifetime) {
+            this.remove();
             return;
         }
-        prevPosX = posX;
-        prevPosY = posY;
-        prevPosZ = posZ;
-        if(motionX != 0.0D && motionZ != 0.0D && !onGround)
-        {
-            motionY -= (double)this.particleGravity;
-            move(motionX, motionY, motionZ);
-            motionX *= 0.98000001907348633D;
-            motionY *= 0.98000001907348633D;
-            motionZ *= 0.98000001907348633D;
-            if(onGround)
-            {
-                motionX *= 0.69999998807907104D;
-                motionZ *= 0.69999998807907104D;
-                posY += 0.2D;
+
+        this.xo = this.x;
+        this.yo = this.y;
+        this.zo = this.z;
+
+        if (this.xd != 0.0D && this.zd != 0.0D && !this.onGround) {
+            this.yd -= (double) this.gravity;
+            this.move(this.xd, this.yd, this.zd);
+            this.xd *= 0.98000001907348633D;
+            this.yd *= 0.98000001907348633D;
+            this.zd *= 0.98000001907348633D;
+
+            if (this.onGround) {
+                this.xd *= 0.69999998807907104D;
+                this.zd *= 0.69999998807907104D;
+                this.y += 0.2D;
             }
         }
     }
 
     @Override
-    public int getFXLayer()
-    {
-        return 0;
+    public ParticleRenderType getRenderType() {
+        return ParticleRenderType.PARTICLE_SHEET_TRANSLUCENT;
     }
-
 }
