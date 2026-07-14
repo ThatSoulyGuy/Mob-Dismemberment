@@ -1,6 +1,6 @@
 modLoader = "javafml"
 loaderVersion = "[47,)"
-license = "All Rights Reserved"
+license = "LGPLv3"
 issueTrackerURL = "https://github.com/iChun/MobDismemberment/issues"
 
 [[mods]]
@@ -8,7 +8,7 @@ modId = "mobdismemberment"
 version = "${file.jarVersion}"
 displayName = "Mob Dismemberment"
 displayURL = "https://ichun.me/mods/mob-dismemberment/"
-authors = "iChun"
+authors = "iChun, ThatSoulyGuy"
 description = '''
 Dismember mobs! When zombies, skeletons, and creepers die, they fall apart into pieces.
 '''
