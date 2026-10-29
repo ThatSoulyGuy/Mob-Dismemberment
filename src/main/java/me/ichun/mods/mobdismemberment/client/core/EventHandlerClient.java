@@ -6,8 +6,12 @@ import me.ichun.mods.mobdismemberment.common.MobDismemberment;
 import me.ichun.mods.mobdismemberment.common.core.Config;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.TagKey;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.PrimedTnt;
 import net.minecraft.world.entity.monster.Creeper;
@@ -34,8 +38,21 @@ public class EventHandlerClient {
         if (entity.level().isClientSide &&
             !(entity instanceof Player) &&
             !entity.isBaby()) {
-            dismemberTimeout.put(entity, 2);
+            queueDismember(entity);
         }
+    }
+
+    private void queueDismember(LivingEntity living) {
+        EntityType<?> type = living.getType();
+        ResourceLocation id = EntityType.getKey(type);
+        for (String entry : Config.MOB_BLACKLIST.get()) {
+            if (entry.startsWith("#")
+                    ? type.is(TagKey.create(Registries.ENTITY_TYPE, new ResourceLocation(entry.substring(1))))
+                    : id.equals(new ResourceLocation(entry))) {
+                return;
+            }
+        }
+        dismemberTimeout.put(living, 2);
     }
 
     @SubscribeEvent
@@ -70,7 +87,7 @@ public class EventHandlerClient {
                         !(ent instanceof Player) &&
                         !living.isBaby() &&
                         !ent.isAlive() && !dismemberTimeout.containsKey(ent)) {
-                        dismemberTimeout.put(living, 2);
+                        queueDismember(living);
                     }
                 }
 
@@ -90,7 +107,7 @@ public class EventHandlerClient {
                                     exploTime.put(ent, time);
                                 }
 
-                                dismemberTimeout.put(creeper, 2);
+                                queueDismember(creeper);
                             }
                         } else if (ent instanceof PrimedTnt || ent instanceof MinecartTNT) {
                             if (!exploTime.containsKey(ent)) {

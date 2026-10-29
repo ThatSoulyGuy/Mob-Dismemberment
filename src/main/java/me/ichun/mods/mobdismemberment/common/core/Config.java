@@ -1,6 +1,9 @@
 package me.ichun.mods.mobdismemberment.common.core;
 
+import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.common.ForgeConfigSpec;
+
+import java.util.List;
 
 public class Config {
     public static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
@@ -12,6 +15,7 @@ public class Config {
     public static final ForgeConfigSpec.IntValue BLOOD_COUNT;
     public static final ForgeConfigSpec.BooleanValue GREEN_BLOOD;
     public static final ForgeConfigSpec.BooleanValue GIB_PUSHING;
+    public static final ForgeConfigSpec.ConfigValue<List<? extends String>> MOB_BLACKLIST;
 
     static {
         BUILDER.comment("Client-side configuration for Mob Dismemberment");
@@ -40,6 +44,11 @@ public class Config {
         GIB_PUSHING = BUILDER
                 .comment("Allow gibs to push entities. Default: true")
                 .define("gibPushing", true);
+
+        MOB_BLACKLIST = BUILDER
+                .comment("Mobs that will not be dismembered. Supports id and tags.")
+                .defineListAllowEmpty("mobBlacklist", List.of("mutantmonsters:mutant_zombie"),
+                        o -> o instanceof String s && ResourceLocation.tryParse(s.startsWith("#") ? s.substring(1) : s) != null);
 
         BUILDER.pop();
         SPEC = BUILDER.build();
